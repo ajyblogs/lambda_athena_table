@@ -2,11 +2,22 @@
   "tables": [
     {
       "name": "example_table1",
-      "query": "CREATE EXTERNAL TABLE example_table1 (id string, value int) STORED AS CSV LOCATION 's3://${DATA_BUCKET}/table1/';"
-    },
-    {
-      "name": "example_table2",
-      "query": "CREATE EXTERNAL TABLE example_table2 (timestamp timestamp, data string) STORED AS CSV LOCATION 's3://${DATA_BUCKET}/table2/';"
+      "description": "Example table 1 with basic columns",
+      "location": "path/to/data1/",
+      "columns": [
+        {
+          "name": "id",
+          "type": "string"
+        },
+        {
+          "name": "value",
+          "type": "int"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp"
+        }
+      ]
     }
   ]
 }
