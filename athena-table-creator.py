@@ -42,7 +42,6 @@ def create_table(table_config: Dict) -> bool:
     try:
         table_input = {
             'Name': table_config['name'],
-            'DatabaseName': DATABASE,
             'Description': table_config.get('description', ''),
             'TableType': 'EXTERNAL_TABLE',
             'StorageDescriptor': {
