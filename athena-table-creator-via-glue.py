@@ -44,6 +44,9 @@ def create_table(table_config: Dict) -> bool:
             'Name': table_config['name'],
             'Description': table_config.get('description', ''),
             'TableType': 'EXTERNAL_TABLE',
+            'Parameters': {
+                'classification': 'csv'
+            },
             'StorageDescriptor': {
                 'Columns': parse_column_definitions(table_config['columns']),
                 'Location': f"s3://{DATA_BUCKET}/{table_config['location']}"
