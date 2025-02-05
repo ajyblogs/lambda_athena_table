@@ -8,11 +8,6 @@ Parameters:
     AllowedValues: [dev, staging, prod]
     Description: Environment name for resource tagging
   
-  ResultsBucket:
-    Type: String
-    Description: S3 bucket for Athena query results
-    Default: athena-spark-datastore
-  
   DataBucket:
     Type: String
     Description: S3 bucket containing the data for Athena tables
@@ -29,50 +24,6 @@ Parameters:
     Default: default
 
 Resources:
-  AthenaTableCreatorRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-      Policies:
-        - PolicyName: AthenaTableCreatorPolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - s3:GetBucketLocation
-                Resource: '*'
-              - Effect: Allow
-                Action:
-                  - athena:StartQueryExecution
-                  - athena:GetQueryExecution
-                Resource: '*'
-              - Effect: Allow
-                Action:
-                  - s3:PutObject
-                  - s3:GetObject
-                Resource:
-                  - !Sub arn:aws:s3:::${ResultsBucket}/*
-                  - !Sub arn:aws:s3:::${DataBucket}/*
-              - Effect: Allow
-                Action:
-                  - glue:CreateTable
-                  - glue:GetTable
-                  - glue:GetDatabase
-                Resource: '*'
-      Tags:
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Service
-          Value: AthenaTableCreator
 
   AthenaTableCreatorLambda:
     Type: AWS::Lambda::Function
@@ -96,22 +47,7 @@ Resources:
         - Key: Service
           Value: AthenaTableCreator
 
-  AthenaTableCreatorLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub /aws/lambda/${AthenaTableCreatorLambda}
-      RetentionInDays: 30
-      Tags:
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Service
-          Value: AthenaTableCreator
-
 Outputs:
   LambdaArn:
     Description: ARN of the created Lambda function
     Value: !GetAtt AthenaTableCreatorLambda.Arn
-
-  LambdaRoleArn:
-    Description: ARN of the Lambda execution role
-    Value: !GetAtt AthenaTableCreatorRole.Arn
