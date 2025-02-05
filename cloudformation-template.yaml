@@ -5,40 +5,44 @@ Parameters:
   Environment:
     Type: String
     Default: dev
-    AllowedValues: [dev, staging, prod]
+    AllowedValues: [dev, acceptance, prod]
     Description: Environment name for resource tagging
-  
-  DataBucket:
-    Type: String
-    Description: S3 bucket containing the data for Athena tables
-    Default: athena-spark-datastore
 
   CodeBucket:
     Type: String
     Description: S3 bucket containing the code for Lambda
-    Default: athena-spark-datastore
+
+  CodePrefix:
+    Type: String
+    Description: S3 path within bucket containing the zip file for Lambda 
+  
+  DataBucket:
+    Type: String
+    Description: S3 bucket containing the data for Athena tables
+
+  LambdaIAMRoleARN:
+    Type: String
+    Description: IAM role ARN for Lambda
   
   DatabaseName:
     Type: String
     Description: Athena/Glue database name
-    Default: default
 
 Resources:
 
   AthenaTableCreatorLambda:
     Type: AWS::Lambda::Function
     Properties:
-      Handler: athena-table-creator.lambda_handler
-      Role: !GetAtt AthenaTableCreatorRole.Arn
+      Handler: lambda_function.lambda_handler
+      Role: !Ref LambdaIAMRoleARN
       Code:
         S3Bucket: !Ref CodeBucket
-        S3Key: athena-table-creator.zip
+        S3Key: !Ref CodePrefix
       Runtime: python3.9
       Timeout: 300
       MemorySize: 256
       Environment:
         Variables:
-          RESULTS_BUCKET: !Ref ResultsBucket
           DATA_BUCKET: !Ref DataBucket
           DATABASE_NAME: !Ref DatabaseName
       Tags:
