@@ -1,5 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'CloudFormation template for Glue Table Creator with Custom Resource Trigger'
+Transform: AWS::Serverless-2016-10-31
+Description: 'SAM template for Glue Table Creator with Custom Resource Trigger'
+
 Parameters:
   Environment:
     Type: String
@@ -19,24 +21,20 @@ Parameters:
     Type: String
     Description: S3 bucket containing the Lambda code package
 
-  LambdaIAMRoleARN:
-    Type: String
-    Description: IAM role ARN for Lambda
-
   TableCreatorCodeKey:
     Type: String
     Default: glue-table-creator.zip
     Description: S3 key for the Glue table creator Lambda code package
 
 Resources:
-  GlueTableCreatorLambda:
-    Type: AWS::Lambda::Function
+  # Main Glue Table Creator Lambda
+  GlueTableCreatorFunction:
+    Type: AWS::Serverless::Function
     Properties:
-      Handler: lambda_function.lambda_handler
-      Role: !Ref LambdaIAMRoleARN
-      Code:
-        S3Bucket: !Ref CodeBucket
-        S3Key: !Ref TableCreatorCodeKey
+      Handler: index.lambda_handler
+      CodeUri: 
+        Bucket: !Ref CodeBucket
+        Key: !Ref TableCreatorCodeKey
       Runtime: python3.9
       Timeout: 300
       MemorySize: 256
@@ -44,17 +42,35 @@ Resources:
         Variables:
           DATABASE_NAME: !Ref DatabaseName
           DATA_BUCKET: !Ref DataBucket
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - glue:CreateTable
+                - glue:GetTable
+                - glue:GetDatabase
+                - glue:GetDatabases
+              Resource: '*'
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:GetBucketLocation
+                - s3:ListBucket
+              Resource:
+                - !Sub arn:aws:s3:::${DataBucket}
+                - !Sub arn:aws:s3:::${DataBucket}/*
+                - !Sub arn:aws:s3:::${CodeBucket}
+                - !Sub arn:aws:s3:::${CodeBucket}/${TableCreatorCodeKey}
       Tags:
-        - Key: Environment
-          Value: !Ref Environment
+        Environment: !Ref Environment
 
-  TriggerLambda:
-    Type: AWS::Lambda::Function
+  # Custom Resource Trigger Lambda
+  TriggerFunction:
+    Type: AWS::Serverless::Function
     Properties:
       Handler: index.lambda_handler
-      Role: !Ref LambdaIAMRoleARN
-      Code:
-        ZipFile: |
+      InlineCode: |
           import json
           import boto3
           import cfnresponse
@@ -102,24 +118,31 @@ Resources:
       Runtime: python3.9
       Timeout: 300
       MemorySize: 128
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource: !GetAtt GlueTableCreatorFunction.Arn
       Tags:
-        - Key: Environment
-          Value: !Ref Environment
+        Environment: !Ref Environment
 
+  # Custom Resource that triggers the table creation
   TableCreationTrigger:
     Type: Custom::TableCreationTrigger
     Properties:
-      ServiceToken: !GetAtt TriggerLambda.Arn
-      TableCreatorFunction: !GetAtt GlueTableCreatorLambda.Arn
+      ServiceToken: !GetAtt TriggerFunction.Arn
+      TableCreatorFunction: !GetAtt GlueTableCreatorFunction.Arn
       UpdateToken: !Sub '${AWS::StackName}-${AWS::Region}-${AWS::AccountId}'
     DependsOn:
-      - GlueTableCreatorLambda
+      - GlueTableCreatorFunction
 
 Outputs:
-  GlueTableCreatorLambdaArn:
+  GlueTableCreatorFunctionArn:
     Description: ARN of the Glue table creator Lambda function
-    Value: !GetAtt GlueTableCreatorLambda.Arn
+    Value: !GetAtt GlueTableCreatorFunction.Arn
 
-  TriggerLambdaArn:
+  TriggerFunctionArn:
     Description: ARN of the trigger Lambda function
-    Value: !GetAtt TriggerLambda.Arn
+    Value: !GetAtt TriggerFunction.Arn
