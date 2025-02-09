@@ -1,57 +1,125 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'CloudFormation template for Athena Table Creator Lambda'
-
+Description: 'CloudFormation template for Glue Table Creator with Custom Resource Trigger'
 Parameters:
   Environment:
     Type: String
     Default: dev
-    AllowedValues: [dev, acceptance, prod]
+    AllowedValues: [dev, staging, prod]
     Description: Environment name for resource tagging
-
-  CodeBucket:
-    Type: String
-    Description: S3 bucket containing the code for Lambda
-
-  CodePrefix:
-    Type: String
-    Description: S3 path within bucket containing the zip file for Lambda 
   
   DataBucket:
     Type: String
-    Description: S3 bucket containing the data for Athena tables
+    Description: S3 bucket containing the data for Glue tables
+  
+  DatabaseName:
+    Type: String
+    Description: Glue database name
+    
+  CodeBucket:
+    Type: String
+    Description: S3 bucket containing the Lambda code package
 
   LambdaIAMRoleARN:
     Type: String
     Description: IAM role ARN for Lambda
-  
-  DatabaseName:
+
+  TableCreatorCodeKey:
     Type: String
-    Description: Athena/Glue database name
+    Default: glue-table-creator.zip
+    Description: S3 key for the Glue table creator Lambda code package
 
 Resources:
-
-  AthenaTableCreatorLambda:
+  GlueTableCreatorLambda:
     Type: AWS::Lambda::Function
     Properties:
       Handler: lambda_function.lambda_handler
       Role: !Ref LambdaIAMRoleARN
       Code:
         S3Bucket: !Ref CodeBucket
-        S3Key: !Ref CodePrefix
+        S3Key: !Ref TableCreatorCodeKey
       Runtime: python3.9
       Timeout: 300
       MemorySize: 256
       Environment:
         Variables:
-          DATA_BUCKET: !Ref DataBucket
           DATABASE_NAME: !Ref DatabaseName
+          DATA_BUCKET: !Ref DataBucket
       Tags:
         - Key: Environment
           Value: !Ref Environment
-        - Key: Service
-          Value: AthenaTableCreator
+
+  TriggerLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.lambda_handler
+      Role: !Ref LambdaIAMRoleARN
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import cfnresponse
+          import logging
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          lambda_client = boto3.client('lambda')
+
+          def lambda_handler(event, context):
+              try:
+                  logger.info(f"Received event: {json.dumps(event)}")
+                  
+                  if event['RequestType'] in ['Create', 'Update']:
+                      # Invoke the Glue table creator Lambda
+                      response = lambda_client.invoke(
+                          FunctionName=event['ResourceProperties']['TableCreatorFunction'],
+                          InvocationType='RequestResponse',
+                          Payload=json.dumps({})
+                      )
+                      
+                      # Parse the response
+                      payload = json.loads(response['Payload'].read().decode())
+                      logger.info(f"Table creator response: {payload}")
+                      
+                      # Check if the table creation was successful
+                      if payload.get('statusCode') == 200:
+                          cfnresponse.send(event, context, cfnresponse.SUCCESS, 
+                              {'Message': 'Tables created successfully'})
+                      else:
+                          error_msg = payload.get('body', {}).get('error', 'Unknown error')
+                          cfnresponse.send(event, context, cfnresponse.FAILED, 
+                              {'Error': f"Table creation failed: {error_msg}"})
+                  
+                  elif event['RequestType'] == 'Delete':
+                      # Just return success for delete events
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, 
+                          {'Message': 'Delete request processed'})
+                  
+              except Exception as e:
+                  logger.error(f"Error: {str(e)}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, 
+                      {'Error': str(e)})
+      Runtime: python3.9
+      Timeout: 300
+      MemorySize: 128
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  TableCreationTrigger:
+    Type: Custom::TableCreationTrigger
+    Properties:
+      ServiceToken: !GetAtt TriggerLambda.Arn
+      TableCreatorFunction: !GetAtt GlueTableCreatorLambda.Arn
+      UpdateToken: !Sub '${AWS::StackName}-${AWS::Region}-${AWS::AccountId}'
+    DependsOn:
+      - GlueTableCreatorLambda
 
 Outputs:
-  LambdaArn:
-    Description: ARN of the created Lambda function
-    Value: !GetAtt AthenaTableCreatorLambda.Arn
+  GlueTableCreatorLambdaArn:
+    Description: ARN of the Glue table creator Lambda function
+    Value: !GetAtt GlueTableCreatorLambda.Arn
+
+  TriggerLambdaArn:
+    Description: ARN of the trigger Lambda function
+    Value: !GetAtt TriggerLambda.Arn
